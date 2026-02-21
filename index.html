@@ -10,7 +10,7 @@
 margin:0;
 padding:0;
 box-sizing:border-box;
-font-family: 'Segoe UI', sans-serif;
+font-family:'Segoe UI',sans-serif;
 scroll-behavior:smooth;
 }
 
@@ -25,7 +25,6 @@ background:#f4f4f4;
 color:#222;
 }
 
-/* Navbar */
 nav{
 display:flex;
 justify-content:space-between;
@@ -35,7 +34,6 @@ background:rgba(0,0,0,0.3);
 backdrop-filter:blur(10px);
 position:sticky;
 top:0;
-z-index:1000;
 }
 
 .toggle{
@@ -46,30 +44,20 @@ border-radius:20px;
 cursor:pointer;
 }
 
-/* Section */
 section{
 padding:60px 20px;
 text-align:center;
 }
 
 .card{
-background:rgba(255,255,255,0.05);
-padding:30px;
+background:rgba(255,255,255,0.08);
+padding:25px;
 border-radius:15px;
 margin:20px auto;
 max-width:500px;
-box-shadow:0 10px 30px rgba(0,0,0,0.3);
-transition:0.4s;
-opacity:0;
-transform:translateY(50px);
+box-shadow:0 10px 25px rgba(0,0,0,0.4);
 }
 
-.card.show{
-opacity:1;
-transform:translateY(0);
-}
-
-/* Button */
 button{
 background:linear-gradient(45deg,orange,red);
 border:none;
@@ -80,7 +68,6 @@ cursor:pointer;
 margin-top:10px;
 }
 
-/* Input */
 input,textarea{
 width:100%;
 padding:10px;
@@ -89,7 +76,6 @@ border:none;
 border-radius:10px;
 }
 
-/* WhatsApp */
 .whatsapp{
 position:fixed;
 bottom:20px;
@@ -98,18 +84,12 @@ background:#25D366;
 color:white;
 padding:15px;
 border-radius:50%;
-font-size:20px;
 text-decoration:none;
-}
-
-/* Responsive */
-@media(max-width:600px){
-.card{
-margin:15px;
-}
+font-size:20px;
 }
 </style>
 </head>
+
 <body>
 
 <nav>
@@ -118,6 +98,7 @@ margin:15px;
 </nav>
 
 <section>
+
 <div class="card">
 <h2>👋 Hello, I'm Prince</h2>
 <p>Frontend Developer | HTML | CSS | JS</p>
@@ -136,4 +117,37 @@ margin:15px;
 <input type="number" id="num1" placeholder="Number 1">
 <input type="number" id="num2" placeholder="Number 2">
 <button onclick="add()">Add</button>
-<p
+<p id="result"></p>
+</div>
+
+<div class="card">
+<h2>📩 Contact Me</h2>
+<input type="text" placeholder="Your Name">
+<input type="email" placeholder="Your Email">
+<textarea placeholder="Your Message"></textarea>
+<button onclick="alert('Message Sent!')">Send</button>
+</div>
+
+</section>
+
+<a class="whatsapp" href="https://wa.me/7256939921" target="_blank">💬</a>
+
+<script>
+function toggleMode(){
+document.body.classList.toggle("light");
+}
+
+function add(){
+let n1=document.getElementById("num1").value;
+let n2=document.getElementById("num2").value;
+let sum=Number(n1)+Number(n2);
+document.getElementById("result").innerText="Result: "+sum;
+}
+
+function downloadResume(){
+alert("Resume download feature coming soon!");
+}
+</script>
+
+</body>
+</html>
