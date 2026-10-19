@@ -35,9 +35,24 @@ jobs:
         run: npm run build
       - name: Prepare site (preserve existing homepage)
         run: |
-          mkdir -p _site/shadowchat
+          mkdir -p _site/shadowchat _site/chat
           cp index.html _site/index.html
           cp -a shadowchat/dist/. _site/shadowchat/
+          cat > _site/chat/index.html <<'EOF'
+          <!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <meta http-equiv="refresh" content="0;url=/Mywebsite-/shadowchat/">
+            <title>Open Chatbot</title>
+          </head>
+          <body>
+            <p>Opening chatbot… <a href="/Mywebsite-/shadowchat/">Tap here if it doesn't open</a>.</p>
+            <script>location.replace("/Mywebsite-/shadowchat/");</script>
+          </body>
+          </html>
+          EOF
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
