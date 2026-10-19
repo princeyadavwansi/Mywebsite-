@@ -22,3 +22,5 @@
 .guest-timeline .message-row.guest-message .bubble{background:#124b4a;border-color:#237b78;color:#e4fffc;border-radius:12px 12px 12px 3px}
 .guest-timeline .message-row.host-message .sender{color:#b8a7ff}
 .guest-timeline .message-row.guest-message .sender{color:#63d8cc}
+
+.photo-file-input{display:none}.photo-button{width:34px;height:34px;flex-shrink:0;border:1px solid #343744;border-radius:9px;background:#20222d;color:#d9d4ff;font-size:18px;display:grid;place-items:center}.photo-button:disabled{opacity:.5}.chat-photo{display:block;max-width:min(320px,65vw);max-height:360px;object-fit:contain;border-radius:9px}
