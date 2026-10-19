@@ -110,7 +110,7 @@ export default function App() {
     e.preventDefault(); if (!client || !activeRoom || !draft.trim()) return;
     const body = draft.trim(); setDraft("");
     try {
-      await client.sendEvent(activeRoom, "m.room.message", { msgtype: "m.text", body });
+      await client.sendTextMessage(activeRoom, body);
     } catch (err) {
       setDraft(body); setError(err instanceof Error ? err.message : "Message could not be sent.");
     }
