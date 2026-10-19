@@ -34,10 +34,10 @@ function readHash() {
 export default function App() {
   const initial = readHash();
   const [code, setCode] = useState(initial.code);
-  const [key, setKey] = useState(initial.key);
+  const [key, setKey] = useState(() => localStorage.getItem("shadowchat_key") || initial.key);
   const [name, setName] = useState(localStorage.getItem("shadowchat_name") || "");
   const [session, setSession] = useState<Session | null>(() => {
-    try { const saved = localStorage.getItem("shadowchat_session"); const savedKey = localStorage.getItem("shadowchat_key"); if (saved && savedKey) { setKey(savedKey); return JSON.parse(saved); } } catch {}
+    try { const saved = localStorage.getItem("shadowchat_session"); const savedKey = localStorage.getItem("shadowchat_key"); if (saved && savedKey) { return JSON.parse(saved); } } catch {}
     return null;
   });
   const [messages, setMessages] = useState<{id:number; sender:string; body:string; mine:boolean; time:string}[]>([]);
