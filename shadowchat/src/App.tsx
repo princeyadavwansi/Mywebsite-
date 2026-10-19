@@ -35,15 +35,12 @@ function readHash() {
 }
 export default function App() {
   const initial = readHash();
-  const hostMode = new URLSearchParams(window.location.search).get("host") === "1" || localStorage.getItem("shadowchat_role") === "host";
-  if (new URLSearchParams(window.location.search).get("host") === "1") localStorage.setItem("shadowchat_role", "host");
+  const hostMode = new URLSearchParams(window.location.search).get("host") === "1";
   const [code, setCode] = useState(() => initial.code || "");
   const [key, setKey] = useState(() => localStorage.getItem("shadowchat_key") || initial.key);
-  const [name, setName] = useState("");
-  const [session, setSession] = useState<Session | null>(() => {
-    try { const saved = localStorage.getItem("shadowchat_session"); const savedKey = localStorage.getItem("shadowchat_key"); if (saved && savedKey && localStorage.getItem("shadowchat_code") === (initial.code || localStorage.getItem("shadowchat_code") || "")) { return JSON.parse(saved); } } catch {}
-    return null;
-  });
+  const [name, setName] = useState("Prince Ydv");
+  // Never restore an active chat session automatically. Every visit must re-enter the room code.
+  const [session, setSession] = useState<Session | null>(null);
   const [messages, setMessages] = useState<{id:number; sender:string; body:string; mine:boolean; time:string}[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [draft, setDraft] = useState("");
@@ -133,8 +130,8 @@ export default function App() {
     finally { setBusy(false); }
   }
   function leave() {
-    localStorage.removeItem("shadowchat_session"); localStorage.removeItem("shadowchat_key");
-    setSession(null); setMessages([]); setShareLink(""); setError("");
+    localStorage.removeItem("shadowchat_session"); localStorage.removeItem("shadowchat_key"); localStorage.removeItem("shadowchat_code");
+    setSession(null); setMessages([]); setShareLink(""); setCode(""); setKey(""); setError("");
   }
   return <main className="guest-app">
     <header className="guest-header"><a className="brand" href="#"><span className="brand-mark">S</span><span>shadow<span className="brand-light">chat</span></span></a><span className="top-status"><i className={session ? "status-dot online" : "status-dot"}/>{session ? "Private room connected" : "Share a code. Keep it private."}</span></header>
@@ -145,6 +142,6 @@ export default function App() {
       <div className="timeline guest-timeline" ref={timeline}>{messages.length===0 ? <div className="empty-chat"><div className="empty-lock">◇</div><h3>Start the conversation.</h3><p>Tell your trusted person this room code so they can join from the website.</p></div> : messages.map(m=><div key={m.id} className={"message-row "+(m.mine?"mine":"")}><div className="message-stack">{!m.mine && <small className="sender">{m.sender}</small>}<div className="bubble">{m.body}</div><time>{m.time}</time>{m.mine && <small className="read-receipt">{members.some(member=>member.id!==session.sessionId && member.lastReadMessageId!==null && member.lastReadMessageId>=m.id) ? "Seen" : "Sent"}</small>}</div></div>)}</div>
       <form className="composer guest-composer" onSubmit={send}><input value={draft} onChange={e=>setDraft(e.target.value)} placeholder="Write a private message…" autoComplete="off" aria-label="Message"/><button className="send-button" disabled={busy||!draft.trim()} aria-label="Send message">↑</button></form>{error && <p className="error-text guest-error">{error}</p>}
     </section>}
-    <footer className="footer"><span>SHADOWCHAT · GUEST CHAT</span><span>Only share your room code with trusted people.</span></footer>
+    <footer className="footer"><span>BOTCHAT · PRIVATE CHAT</span><span>Only share your room code with trusted people.</span></footer>
   </main>;
 }
