@@ -37,7 +37,7 @@ export default function App() {
   const [key, setKey] = useState(() => localStorage.getItem("shadowchat_key") || initial.key);
   const [name, setName] = useState(localStorage.getItem("shadowchat_name") || "");
   const [session, setSession] = useState<Session | null>(() => {
-    try { const saved = localStorage.getItem("shadowchat_session"); const savedKey = localStorage.getItem("shadowchat_key"); if (saved && savedKey) { return JSON.parse(saved); } } catch {}
+    try { const saved = localStorage.getItem("shadowchat_session"); const savedKey = localStorage.getItem("shadowchat_key"); if (saved && savedKey && localStorage.getItem("shadowchat_code") === initial.code) { return JSON.parse(saved); } } catch {}
     return null;
   });
   const [messages, setMessages] = useState<{id:number; sender:string; body:string; mine:boolean; time:string}[]>([]);
@@ -52,7 +52,7 @@ export default function App() {
     const joined = await api({ action: "join", secret: roomCode, displayName: displayName || "Guest" });
     const next = { roomId: joined.roomId, sessionId: joined.sessionId, token: joined.token, displayName: joined.displayName, expiresAt: joined.expiresAt };
     localStorage.setItem("shadowchat_session", JSON.stringify(next));
-    localStorage.setItem("shadowchat_key", roomKey);
+    localStorage.setItem("shadowchat_key", roomKey);\n    localStorage.setItem("shadowchat_code", roomCode);
     localStorage.setItem("shadowchat_name", next.displayName);
     setSession(next); setKey(roomKey); setCode(roomCode); setName(next.displayName);
     setError("");
@@ -126,7 +126,7 @@ export default function App() {
     if (!session || !ownerToken) { setError("Only the room creator on this browser can revoke this room."); return; }
     if (!window.confirm("Revoke this room? Nobody will be able to send or read messages afterwards.")) return;
     setBusy(true);
-    try { await api({ action: "revoke", token: session.token, ownerToken }); localStorage.removeItem("shadowchat_session"); localStorage.removeItem("shadowchat_key"); localStorage.removeItem("shadowchat_owner"); setSession(null); setOwnerToken(""); setMessages([]); setShareLink(""); setError("Room revoked."); }
+    try { await api({ action: "revoke", token: session.token, ownerToken }); localStorage.removeItem("shadowchat_session"); localStorage.removeItem("shadowchat_key"); localStorage.removeItem("shadowchat_code"); localStorage.removeItem("shadowchat_owner"); setSession(null); setOwnerToken(""); setMessages([]); setShareLink(""); setError("Room revoked."); }
     catch (e) { setError(e instanceof Error ? e.message : "Could not revoke room"); }
     finally { setBusy(false); }
   }
