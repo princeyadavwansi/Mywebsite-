@@ -21,6 +21,7 @@ async function encryptMessage(text: string, keyText: string) {
   return JSON.stringify({ iv: b64(iv), data: b64(new Uint8Array(encrypted)) });
 }
 async function keyFromCode(code: string) { const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("shadowchat-key-v1:" + code)); return b64(new Uint8Array(digest)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, ""); }
+async function hashAppPin(pin: string) { const data = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("botchat-device-lock-v1:" + pin)); return b64(new Uint8Array(data)); }
 async function decryptMessage(payload: string, keyText: string) {
   try {
     const value = JSON.parse(payload);
@@ -48,6 +49,10 @@ export default function App() {
   const [error, setError] = useState("");
   const [shareLink, setShareLink] = useState("");
   const [ownerToken, setOwnerToken] = useState(localStorage.getItem("shadowchat_owner") || "");
+  const [pinHash, setPinHash] = useState(localStorage.getItem("botchat_pin_hash") || "");
+  const [pinInput, setPinInput] = useState("");
+  const [locked, setLocked] = useState(!!localStorage.getItem("botchat_pin_hash"));
+  const [pinError, setPinError] = useState("");
   const timeline = useRef<HTMLDivElement>(null);
 
   const joinWithCode = useCallback(async (roomCode: string, roomKey: string, displayName: string) => {
@@ -81,6 +86,28 @@ export default function App() {
   }, [session, key]);
 
   useEffect(() => { timeline.current?.scrollTo({ top: timeline.current.scrollHeight, behavior: "smooth" }); }, [messages]);
+
+  useEffect(() => {
+    if (!pinHash || locked) return;
+    let idleTimer = 0;
+    const lockNow = () => { setLocked(true); setPinInput(""); setPinError(""); };
+    const resetIdle = () => { window.clearTimeout(idleTimer); idleTimer = window.setTimeout(lockNow, 60_000); };
+    const onVisibility = () => { if (document.visibilityState === "hidden") lockNow(); else resetIdle(); };
+    const events = ["pointerdown", "keydown", "touchstart", "mousemove"] as const;
+    events.forEach(event => window.addEventListener(event, resetIdle, { passive: true }));
+    document.addEventListener("visibilitychange", onVisibility);
+    resetIdle();
+    return () => { window.clearTimeout(idleTimer); events.forEach(event => window.removeEventListener(event, resetIdle)); document.removeEventListener("visibilitychange", onVisibility); };
+  }, [pinHash, locked]);
+
+  async function submitPin(e: FormEvent) {
+    e.preventDefault(); setPinError("");
+    if (!/^\\d{6}$/.test(pinInput)) { setPinError("PIN exactly 6 digits ka hona chahiye."); return; }
+    const candidate = await hashAppPin(pinInput);
+    if (!pinHash) { localStorage.setItem("botchat_pin_hash", candidate); setPinHash(candidate); setLocked(false); setPinInput(""); return; }
+    if (candidate !== pinHash) { setPinError("Wrong PIN. Dobara try karo."); setPinInput(""); return; }
+    setLocked(false); setPinInput("");
+  }
 
   async function createRoom() {
     setBusy(true); setError("");
@@ -133,11 +160,12 @@ export default function App() {
     localStorage.removeItem("shadowchat_session"); localStorage.removeItem("shadowchat_key"); localStorage.removeItem("shadowchat_code");
     setSession(null); setMessages([]); setShareLink(""); setCode(""); setKey(""); setError("");
   }
+  if (!pinHash || locked) return <main className="guest-app"><header className="guest-header"><a className="brand" href="#"><span className="brand-mark">B</span><span>Bot<span className="brand-light">Chat</span></span></a><span className="top-status"><i className="status-dot"/>{pinHash ? "Chat locked" : "Device protection setup"}</span></header><section className="guest-welcome"><div className="guest-hero"><div className="eyebrow">BOTCHAT DEVICE SECURITY</div><h1>Your chats.<br/><em>Your privacy.</em></h1><p className="intro">Set a separate 6-digit app PIN. BotChat will lock when you switch away from this page or after 1 minute without activity.</p></div><form className="guest-card" onSubmit={submitPin}><div className="card-kicker">{pinHash ? "LOCKED SESSION" : "ONE-TIME SETUP"}</div><h2>{pinHash ? "Unlock BotChat" : "Create your app PIN"}</h2><label>{pinHash ? "Enter your 6-digit PIN" : "Choose a 6-digit PIN"}<input type="password" inputMode="numeric" autoComplete="off" maxLength={6} pattern="[0-9]{6}" value={pinInput} onChange={e=>setPinInput(e.target.value.replace(/\\D/g,"").slice(0,6))} placeholder="6-digit PIN" required /></label><button className="primary-button" type="submit">{pinHash ? "Unlock chat" : "Set PIN and continue"}</button><p className="fine-print">PIN isi browser par save hoga. Bhoolne par browser storage clear karne se PIN reset ho sakta hai, lekin saved session bhi clear ho sakta hai.</p>{pinError && <p className="error-text">{pinError}</p>}</form></section><footer className="footer"><span>BOTCHAT · PRIVATE CHAT</span><span>Keep your phone and browser secure.</span></footer></main>;
   return <main className="guest-app">
     <header className="guest-header"><a className="brand" href="#"><span className="brand-mark">S</span><span>shadow<span className="brand-light">chat</span></span></a><span className="top-status"><i className={session ? "status-dot online" : "status-dot"}/>{session ? "Private room connected" : "Share a code. Keep it private."}</span></header>
     {!session ? <section className="guest-welcome"><div className="guest-hero"><div className="eyebrow">PRIVATE CONVERSATIONS, SIMPLE ACCESS</div><h1>Talk freely.<br/><em>Keep it yours.</em></h1><p className="intro">One shared room for people you invite. Enter the code shared by the room host to join.</p><div className="feature-row"><div><span className="feature-icon">◇</span><strong>Browser encryption</strong><small>AES-GCM message encryption</small></div><div><span className="feature-icon">#</span><strong>4-digit room code</strong><small>Enter the code to join anytime</small></div></div></div>
       <div className="guest-card"><div className="card-kicker">{hostMode ? "ROOM HOST" : "JOIN A ROOM"}</div><h2>{hostMode ? "Create your private room" : "Enter the room code"}</h2><label>Your display name<input value={name} onChange={e=>setName(e.target.value)} placeholder="Your name" maxLength={40}/></label>{hostMode ? <button className="primary-button" disabled={busy} onClick={()=>void createRoom()}>{busy ? "Creating room…" : "＋ Create a private room"}</button> : null}{!hostMode ? <form onSubmit={joinRoom}><label>4-digit room code<input value={code} onChange={e=>setCode(e.target.value.replace(/\D/g,"").slice(0,4))} placeholder="Enter code from room host" inputMode="numeric" maxLength={4} pattern="[0-9]{4}" required/></label><button className="primary-button" disabled={busy}>{busy ? "Joining…" : "Join room ↗"}</button></form> : null}<p className="fine-print">{hostMode ? "Create a room, then share its 4-digit code with the other person." : "Enter the 4-digit code shared by the room host. Only share it with someone you trust."}</p>{error && <p className="error-text">{error}</p>}</div>
-    </section> : <section className="guest-chat"><div className="guest-chat-head"><div><div className="card-kicker">YOUR PRIVATE SPACE</div><h2>Conversation</h2><p>Signed in as <strong>{session.displayName}</strong></p><p className="presence-line">{members.filter(m=>m.id!==session.sessionId && m.online).length > 0 ? <><i className="status-dot online"/> {members.filter(m=>m.id!==session.sessionId && m.online).map(m=>m.displayName).join(", ")} online</> : <><i className="status-dot"/> Others offline</>}</p></div><div className="chat-actions"><div className="room-code-pill">ROOM CODE <strong>{code}</strong></div>{ownerToken && <button className="outline-button danger" onClick={()=>void revokeRoom()} disabled={busy}>Revoke room</button>}<button className="outline-button" onClick={leave}>Leave</button></div></div>
+    </section> : <section className="guest-chat"><div className="guest-chat-head"><div><div className="card-kicker">YOUR PRIVATE SPACE</div><h2>Conversation</h2><p>Signed in as <strong>{session.displayName}</strong></p><p className="presence-line">{members.filter(m=>m.id!==session.sessionId && m.online).length > 0 ? <><i className="status-dot online"/> {members.filter(m=>m.id!==session.sessionId && m.online).map(m=>m.displayName).join(", ")} online</> : <><i className="status-dot"/> Others offline</>}</p></div><div className="chat-actions"><div className="room-code-pill">ROOM CODE <strong>{code}</strong></div><button className="outline-button" onClick={()=>{setLocked(true);setPinInput("");}}>Lock now</button>{ownerToken && <button className="outline-button danger" onClick={()=>void revokeRoom()} disabled={busy}>Revoke room</button>}<button className="outline-button" onClick={leave}>Leave</button></div></div>
       <div className="security-banner"><span>◇</span><div><strong>Encrypted in your browser</strong><small>Messages stay in chat history and are not deleted when someone reads them. Read receipts and online status update while the chat is open. A 4-digit code is weak; avoid sensitive information.</small></div></div>
       <div className="timeline guest-timeline" ref={timeline}>{messages.length===0 ? <div className="empty-chat"><div className="empty-lock">◇</div><h3>Start the conversation.</h3><p>Tell your trusted person this room code so they can join from the website.</p></div> : messages.map(m=><div key={m.id} className={"message-row "+(m.mine?"mine":"")}><div className="message-stack">{!m.mine && <small className="sender">{m.sender}</small>}<div className="bubble">{m.body}</div><time>{m.time}</time>{m.mine && <small className="read-receipt">{members.some(member=>member.id!==session.sessionId && member.lastReadMessageId!==null && member.lastReadMessageId>=m.id) ? "Seen" : "Sent"}</small>}</div></div>)}</div>
       <form className="composer guest-composer" onSubmit={send}><input value={draft} onChange={e=>setDraft(e.target.value)} placeholder="Write a private message…" autoComplete="off" aria-label="Message"/><button className="send-button" disabled={busy||!draft.trim()} aria-label="Send message">↑</button></form>{error && <p className="error-text guest-error">{error}</p>}
