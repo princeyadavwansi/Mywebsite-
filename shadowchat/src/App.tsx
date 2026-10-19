@@ -54,6 +54,8 @@ export default function App() {
   const [locked, setLocked] = useState(!!localStorage.getItem("botchat_pin_hash"));
   const [pinError, setPinError] = useState("");
   const timeline = useRef<HTMLDivElement>(null);
+  const galleryInput = useRef<HTMLInputElement>(null);
+  const cameraInput = useRef<HTMLInputElement>(null);
 
   const joinWithCode = useCallback(async (roomCode: string, roomKey: string, displayName: string) => {
     const joined = await api({ action: "join", secret: roomCode, displayName: displayName || "Guest" });
@@ -131,6 +133,27 @@ export default function App() {
     } catch (e) { setError(e instanceof Error ? e.message : "Could not join room"); }
     finally { setBusy(false); }
   }
+  async function sendPhoto(file?: File) {
+    if (!session || !key || !file) return;
+    if (!file.type.startsWith("image/")) { setError("Please choose an image file."); return; }
+    setBusy(true); setError("");
+    try {
+      const source = await new Promise<HTMLImageElement>((resolve, reject) => { const img = new Image(); img.onload = () => resolve(img); img.onerror = () => reject(new Error("Could not open image")); img.src = URL.createObjectURL(file); });
+      const scale = Math.min(1, 900 / Math.max(source.width, source.height));
+      const canvas = document.createElement("canvas"); canvas.width = Math.max(1, Math.round(source.width * scale)); canvas.height = Math.max(1, Math.round(source.height * scale));
+      const ctx = canvas.getContext("2d"); if (!ctx) throw new Error("Image processing is unavailable"); ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(source.src);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.65);
+      if (dataUrl.length > 650000) throw new Error("Photo is too large after compression. Please choose a smaller image.");
+      const ciphertext = await encryptMessage("IMG:" + dataUrl, key);
+      await api({ action: "send", token: session.token, ciphertext });
+      const result = await api({ action: "list", token: session.token });
+      const decoded = await Promise.all((result.messages as Message[]).map(async m => ({ id: m.id, sender: m.guest_sessions?.display_name || (m.session_id === session.sessionId ? session.displayName : "Guest"), body: await decryptMessage(m.ciphertext, key), mine: m.session_id === session.sessionId, time: new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) })));
+      setMessages(decoded);
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not send photo"); }
+    finally { setBusy(false); }
+  }
+
   async function send(e: FormEvent) {
     e.preventDefault(); if (!session || !key || !draft.trim()) return;
     setBusy(true); setError("");
@@ -179,8 +202,8 @@ export default function App() {
       <div className="guest-card"><div className="card-kicker">{hostMode ? "ROOM HOST" : "JOIN A ROOM"}</div><h2>{hostMode ? "Create your private room" : "Enter the room code"}</h2><label>Your display name<input value={name} onChange={e=>setName(e.target.value)} placeholder="Your name" maxLength={40}/></label>{hostMode ? <button className="primary-button" disabled={busy} onClick={()=>void createRoom()}>{busy ? "Creating room…" : "＋ Create a private room"}</button> : null}{!hostMode ? <form onSubmit={joinRoom}><label>4-digit room code<input value={code} onChange={e=>setCode(e.target.value.replace(/\D/g,"").slice(0,4))} placeholder="Enter code from room host" inputMode="numeric" maxLength={4} pattern="[0-9]{4}" required/></label><button className="primary-button" disabled={busy}>{busy ? "Joining…" : "Join room ↗"}</button></form> : null}{error && <p className="error-text">{error}</p>}</div>
     </section> : <section className="guest-chat"><div className="guest-chat-head"><div><div className="card-kicker">YOUR PRIVATE SPACE</div><h2>Conversation</h2><p className="presence-line">{members.some(m=>m.id!==session.sessionId && m.online) ? <><i className="status-dot online"/> Online</> : <><i className="status-dot"/> Offline</>}</p></div><div className="chat-actions"><button className="outline-button" onClick={()=>{setLocked(true);setPinInput("");}}>Lock now</button>{ownerToken && <button className="outline-button danger" onClick={()=>void revokeRoom()} disabled={busy}>Revoke room</button>}<button className="outline-button danger" onClick={()=>void deleteChatHistory()} disabled={busy}>Delete chat</button><button className="outline-button" onClick={leave}>Leave</button></div></div>
       <div className="security-banner"><span>◇</span><div><strong>Encrypted in your browser</strong><small>Messages stay in chat history and are not deleted when someone reads them. Read receipts and online status update while the chat is open. A 4-digit code is weak; avoid sensitive information.</small></div></div>
-      <div className="timeline guest-timeline" ref={timeline}>{messages.length===0 ? <div className="empty-chat"><div className="empty-lock">◇</div><h3>Start the conversation.</h3><p>Tell your trusted person this room code so they can join from the website.</p></div> : messages.map(m=><div key={m.id} className={"message-row "+(m.mine?"mine":"")+(hostMode?(m.mine?" host-message":" guest-message"):(m.mine?" guest-message":" host-message"))}><div className="message-stack">{!m.mine && <small className="sender">{m.sender}</small>}<div className="bubble">{m.body}</div><time>{m.time}</time>{m.mine && <small className="read-receipt">{members.some(member=>member.id!==session.sessionId && member.lastReadMessageId!==null && member.lastReadMessageId>=m.id) ? "Seen" : "Sent"}</small>}</div></div>)}</div>
-      <form className="composer guest-composer" onSubmit={send}><input value={draft} onChange={e=>setDraft(e.target.value)} placeholder="Write a private message…" autoComplete="off" aria-label="Message"/><button className="send-button" disabled={busy||!draft.trim()} aria-label="Send message">↑</button></form>{error && <p className="error-text guest-error">{error}</p>}
+      <div className="timeline guest-timeline" ref={timeline}>{messages.length===0 ? <div className="empty-chat"><div className="empty-lock">◇</div><h3>Start the conversation.</h3><p>Tell your trusted person this room code so they can join from the website.</p></div> : messages.map(m=><div key={m.id} className={"message-row "+(m.mine?"mine":"")+(hostMode?(m.mine?" host-message":" guest-message"):(m.mine?" guest-message":" host-message"))}><div className="message-stack">{!m.mine && <small className="sender">{m.sender}</small>}<div className="bubble">{m.body.startsWith("IMG:data:image/") ? <img className="chat-photo" src={m.body.slice(4)} alt="Shared photo" loading="lazy" /> : m.body}</div><time>{m.time}</time>{m.mine && <small className="read-receipt">{members.some(member=>member.id!==session.sessionId && member.lastReadMessageId!==null && member.lastReadMessageId>=m.id) ? "Seen" : "Sent"}</small>}</div></div>)}</div>
+      <form className="composer guest-composer" onSubmit={send}><input value={draft} onChange={e=>setDraft(e.target.value)} placeholder="Write a private message…" autoComplete="off" aria-label="Message"/><input ref={galleryInput} className="photo-file-input" type="file" accept="image/*" onChange={e=>{const file=e.target.files?.[0]; if(file) void sendPhoto(file); e.currentTarget.value="";}}/><input ref={cameraInput} className="photo-file-input" type="file" accept="image/*" capture="environment" onChange={e=>{const file=e.target.files?.[0]; if(file) void sendPhoto(file); e.currentTarget.value="";}}/><button type="button" className="photo-button" disabled={busy} onClick={()=>galleryInput.current?.click()} aria-label="Choose photo" title="Choose photo">▧</button><button type="button" className="photo-button" disabled={busy} onClick={()=>cameraInput.current?.click()} aria-label="Take photo" title="Take photo">📷</button><button className="send-button" disabled={busy||!draft.trim()} aria-label="Send message">↑</button></form>{error && <p className="error-text guest-error">{error}</p>}
     </section>}
     <footer className="footer"><span>BOTCHAT · PRIVATE CHAT</span><span>Only share your room code with trusted people.</span></footer>
   </main>;
