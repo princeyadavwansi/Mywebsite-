@@ -1,4 +1,5 @@
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { FormEvent } from "react";
 import * as sdk from "matrix-js-sdk";
 
 type ChatMessage = { id: string; sender: string; body: string; mine: boolean; time: string };
@@ -85,7 +86,7 @@ export default function App() {
     setBusy(true); setError("");
     try {
       const result = await client.createRoom({
-        name: newRoomName.trim(), visibility: "private", preset: "private_chat",
+        name: newRoomName.trim(), visibility: "private" as never, preset: "private_chat" as never,
         initial_state: [{ type: "m.room.encryption", state_key: "", content: { algorithm: "m.megolm.v1.aes-sha2" } }]
       });
       setNewRoomName(""); setActiveRoom(result.room_id);
@@ -109,7 +110,7 @@ export default function App() {
     e.preventDefault(); if (!client || !activeRoom || !draft.trim()) return;
     const body = draft.trim(); setDraft("");
     try {
-      await client.sendEvent(activeRoom, "m.room.message" as sdk.RoomEvent.Message, { msgtype: "m.text", body });
+      await client.sendEvent(activeRoom, "m.room.message", { msgtype: "m.text", body });
     } catch (err) {
       setDraft(body); setError(err instanceof Error ? err.message : "Message could not be sent.");
     }
