@@ -19,6 +19,7 @@ async function encryptMessage(text: string, keyText: string) {
   const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(text));
   return JSON.stringify({ iv: b64(iv), data: b64(new Uint8Array(encrypted)) });
 }
+async function keyFromCode(code: string) { const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("shadowchat-key-v1:" + code)); return b64(new Uint8Array(digest)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, ""); }
 async function decryptMessage(payload: string, keyText: string) {
   try {
     const value = JSON.parse(payload);
@@ -84,9 +85,8 @@ export default function App() {
     setBusy(true); setError("");
     try {
       const made = await api({ action: "create" });
-      const rawKey = crypto.getRandomValues(new Uint8Array(32));
-      const roomKey = b64(rawKey).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-      const link = window.location.origin + window.location.pathname + "#code=" + made.secret + "&key=" + roomKey;
+      const roomKey = await keyFromCode(made.secret);
+      const link = "";
       localStorage.setItem("shadowchat_owner", made.ownerToken); setOwnerToken(made.ownerToken);
       setShareLink(link);
       await joinWithCode(made.secret, roomKey, name || "Owner");
@@ -96,13 +96,10 @@ export default function App() {
   async function joinRoom(e: FormEvent) {
     e.preventDefault(); setBusy(true); setError("");
     try {
-      const cleanCode = code.trim().toLowerCase();
-      const roomKey = key.trim() || initial.key;
-      if (!/^[a-f0-9]{32}$/.test(cleanCode)) throw new Error("Room code must be 32 hexadecimal characters. Use the full invite link if you have one.");
-      if (!roomKey) throw new Error("A private link key is required. Ask the owner to send the full invite link.");
+      const cleanCode = code.trim();
+      if (!/^\d{4}$/.test(cleanCode)) throw new Error("Room code exactly 4 digits ka hona chahiye.");
+      const roomKey = await keyFromCode(cleanCode);
       await joinWithCode(cleanCode, roomKey, name.trim() || "Guest");
-      const nextUrl = window.location.origin + window.location.pathname + "#code=" + cleanCode + "&key=" + roomKey;
-      window.history.replaceState(null, "", nextUrl);
     } catch (e) { setError(e instanceof Error ? e.message : "Could not join room"); }
     finally { setBusy(false); }
   }
@@ -137,13 +134,13 @@ export default function App() {
   }
   return <main className="guest-app">
     <header className="guest-header"><a className="brand" href="#"><span className="brand-mark">S</span><span>shadow<span className="brand-light">chat</span></span></a><span className="top-status"><i className={session ? "status-dot online" : "status-dot"}/>{session ? "Private room connected" : "Share a code. Keep it private."}</span></header>
-    {!session ? <section className="guest-welcome"><div className="guest-hero"><div className="eyebrow">PRIVATE CONVERSATIONS, SIMPLE ACCESS</div><h1>Talk freely.<br/><em>Keep it yours.</em></h1><p className="intro">Create a private room and share one link. No Matrix account required. Messages are encrypted in your browser before they reach the server.</p><div className="feature-row"><div><span className="feature-icon">◇</span><strong>Browser encryption</strong><small>AES-GCM message encryption</small></div><div><span className="feature-icon">↗</span><strong>Invite link</strong><small>Share only with trusted people</small></div></div></div>
-      <div className="guest-card"><div className="card-kicker">GET STARTED</div><h2>Create a room or join one</h2><label>Your display name<input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Prince" maxLength={40}/></label><button className="primary-button" disabled={busy} onClick={()=>void createRoom()}>{busy ? "Creating room…" : "＋ Create a private room"}</button><div className="guest-divider"><span>OR JOIN WITH A CODE</span></div><form onSubmit={joinRoom}><label>Room code<input value={code} onChange={e=>setCode(e.target.value)} placeholder="Paste the code or open invite link" required/></label><label>Private link key<input value={key} onChange={e=>setKey(e.target.value)} placeholder="Filled automatically from invite link" required/></label><button className="primary-button" disabled={busy}>{busy ? "Joining…" : "Join room ↗"}</button></form><p className="fine-print">Keep the full invite link secret. Anyone who has it can join and decrypt messages. This is an early-stage app, not independently security-audited.</p>{error && <p className="error-text">{error}</p>}</div>
-    </section> : <section className="guest-chat"><div className="guest-chat-head"><div><div className="card-kicker">YOUR PRIVATE SPACE</div><h2>Conversation</h2><p>Signed in as <strong>{session.displayName}</strong></p></div><div className="chat-actions"><button className="outline-button" onClick={()=>{void navigator.clipboard.writeText(shareLink || (window.location.origin+window.location.pathname+"#code="+code+"&key="+key));setError("Invite link copied.");}}>Copy invite link</button>{ownerToken && <button className="outline-button danger" onClick={()=>void revokeRoom()} disabled={busy}>Revoke room</button>}<button className="outline-button" onClick={leave}>Leave</button></div></div>
-      <div className="security-banner"><span>◇</span><div><strong>Encrypted in your browser</strong><small>The server stores encrypted message payloads. Keep the invite link private and use it on trusted devices.</small></div></div>
-      <div className="timeline guest-timeline" ref={timeline}>{messages.length===0 ? <div className="empty-chat"><div className="empty-lock">◇</div><h3>Start the conversation.</h3><p>Share the invite link with one trusted person, then send your first message.</p></div> : messages.map(m=><div key={m.id} className={"message-row "+(m.mine?"mine":"")}><div className="message-stack">{!m.mine && <small className="sender">{m.sender}</small>}<div className="bubble">{m.body}</div><time>{m.time}</time></div></div>)}</div>
+    {!session ? <section className="guest-welcome"><div className="guest-hero"><div className="eyebrow">PRIVATE CONVERSATIONS, SIMPLE ACCESS</div><h1>Talk freely.<br/><em>Keep it yours.</em></h1><p className="intro">Create a room and tell your trusted person its 4-digit code. They can enter it here in Chrome anytime. No invite link needed.</p><div className="feature-row"><div><span className="feature-icon">◇</span><strong>Browser encryption</strong><small>AES-GCM message encryption</small></div><div><span className="feature-icon">#</span><strong>4-digit room code</strong><small>Enter the code to join anytime</small></div></div></div>
+      <div className="guest-card"><div className="card-kicker">GET STARTED</div><h2>Create a room or enter a code</h2><label>Your display name<input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Prince" maxLength={40}/></label><button className="primary-button" disabled={busy} onClick={()=>void createRoom()}>{busy ? "Creating room…" : "＋ Create a private room"}</button><div className="guest-divider"><span>OR JOIN WITH A CODE</span></div><form onSubmit={joinRoom}><label>4-digit room code<input value={code} onChange={e=>setCode(e.target.value.replace(/\D/g,"").slice(0,4))} placeholder="Enter 4 digits" inputMode="numeric" maxLength={4} pattern="[0-9]{4}" required/></label><button className="primary-button" disabled={busy}>{busy ? "Joining…" : "Join room ↗"}</button></form><p className="fine-print">Important: 4-digit codes are easy to guess, so this is convenient but not suitable for sensitive secrets. Only share your code with the person you want to chat with. Rooms remain available until revoked.</p>{error && <p className="error-text">{error}</p>}</div>
+    </section> : <section className="guest-chat"><div className="guest-chat-head"><div><div className="card-kicker">YOUR PRIVATE SPACE</div><h2>Conversation</h2><p>Signed in as <strong>{session.displayName}</strong></p></div><div className="chat-actions"><div className="room-code-pill">ROOM CODE <strong>{code}</strong></div>{ownerToken && <button className="outline-button danger" onClick={()=>void revokeRoom()} disabled={busy}>Revoke room</button>}<button className="outline-button" onClick={leave}>Leave</button></div></div>
+      <div className="security-banner"><span>◇</span><div><strong>Encrypted in your browser</strong><small>Messages are encrypted in the browser, but a 4-digit code is weak. Do not use this for sensitive information.</small></div></div>
+      <div className="timeline guest-timeline" ref={timeline}>{messages.length===0 ? <div className="empty-chat"><div className="empty-lock">◇</div><h3>Start the conversation.</h3><p>Tell your trusted person this room code so they can join from the website.</p></div> : messages.map(m=><div key={m.id} className={"message-row "+(m.mine?"mine":"")}><div className="message-stack">{!m.mine && <small className="sender">{m.sender}</small>}<div className="bubble">{m.body}</div><time>{m.time}</time></div></div>)}</div>
       <form className="composer guest-composer" onSubmit={send}><input value={draft} onChange={e=>setDraft(e.target.value)} placeholder="Write a private message…" autoComplete="off" aria-label="Message"/><button className="send-button" disabled={busy||!draft.trim()} aria-label="Send message">↑</button></form>{error && <p className="error-text guest-error">{error}</p>}
     </section>}
-    <footer className="footer"><span>SHADOWCHAT · GUEST CHAT</span><span>Never share your private invite link publicly.</span></footer>
+    <footer className="footer"><span>SHADOWCHAT · GUEST CHAT</span><span>Only share your room code with trusted people.</span></footer>
   </main>;
 }
