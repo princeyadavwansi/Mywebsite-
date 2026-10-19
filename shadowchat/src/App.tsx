@@ -52,7 +52,8 @@ export default function App() {
     const joined = await api({ action: "join", secret: roomCode, displayName: displayName || "Guest" });
     const next = { roomId: joined.roomId, sessionId: joined.sessionId, token: joined.token, displayName: joined.displayName, expiresAt: joined.expiresAt };
     localStorage.setItem("shadowchat_session", JSON.stringify(next));
-    localStorage.setItem("shadowchat_key", roomKey);\n    localStorage.setItem("shadowchat_code", roomCode);
+    localStorage.setItem("shadowchat_key", roomKey);
+    localStorage.setItem("shadowchat_code", roomCode);
     localStorage.setItem("shadowchat_name", next.displayName);
     setSession(next); setKey(roomKey); setCode(roomCode); setName(next.displayName);
     setError("");
