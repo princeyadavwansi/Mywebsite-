@@ -8,7 +8,7 @@ const b64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
 const unb64 = (value: string) => Uint8Array.from(atob(value), c => c.charCodeAt(0));
 const fromUrl = (value: string) => value.replace(/-/g, "+").replace(/_/g, "/");
 async function api(body: Record<string, unknown>) {
-  const response = await fetch(API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const response = await fetch(API, { method: "POST", headers: { "Content-Type": "application/json", "apikey": "sb_publishable_PoCZJBLkzZhL8sgcQF_nOA_BtIM69qW" }, body: JSON.stringify(body) });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || "Request failed");
   return data;
