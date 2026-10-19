@@ -1,155 +1,148 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import * as sdk from "matrix-js-sdk";
 
-type ChatMessage = { id: string; sender: string; body: string; mine: boolean; time: string };
-type RoomItem = { roomId: string; name: string; encrypted: boolean };
-const DEFAULT_HOMESERVER = "https://matrix.org";
-
+const API = "https://vurpgczypufhkflfowom.supabase.co/functions/v1/shadowchat";
+type Message = { id: number; session_id: string; ciphertext: string; created_at: string; guest_sessions?: { display_name?: string } | null };
+type Session = { roomId: string; sessionId: string; token: string; displayName: string; expiresAt: string };
+const b64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
+const unb64 = (value: string) => Uint8Array.from(atob(value), c => c.charCodeAt(0));
+const fromUrl = (value: string) => value.replace(/-/g, "+").replace(/_/g, "/");
+async function api(body: Record<string, unknown>) {
+  const response = await fetch(API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "Request failed");
+  return data;
+}
+async function encryptMessage(text: string, keyText: string) {
+  const key = await crypto.subtle.importKey("raw", unb64(fromUrl(keyText)), "AES-GCM", false, ["encrypt"]);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(text));
+  return JSON.stringify({ iv: b64(iv), data: b64(new Uint8Array(encrypted)) });
+}
+async function decryptMessage(payload: string, keyText: string) {
+  try {
+    const value = JSON.parse(payload);
+    const key = await crypto.subtle.importKey("raw", unb64(fromUrl(keyText)), "AES-GCM", false, ["decrypt"]);
+    const clear = await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(value.iv) }, key, unb64(value.data));
+    return new TextDecoder().decode(clear);
+  } catch { return "Unable to decrypt this message (check that you used the original private link)."; }
+}
+function readHash() {
+  const params = new URLSearchParams(window.location.hash.slice(1));
+  return { code: params.get("code") || "", key: params.get("key") || "" };
+}
 export default function App() {
-  const [homeserver, setHomeserver] = useState(DEFAULT_HOMESERVER);
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [client, setClient] = useState<sdk.MatrixClient | null>(null);
-  const [userId, setUserId] = useState("");
-  const [rooms, setRooms] = useState<RoomItem[]>([]);
-  const [activeRoom, setActiveRoom] = useState("");
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const initial = readHash();
+  const [code, setCode] = useState(initial.code);
+  const [key, setKey] = useState(initial.key);
+  const [name, setName] = useState(localStorage.getItem("shadowchat_name") || "");
+  const [session, setSession] = useState<Session | null>(() => {
+    try { const saved = localStorage.getItem("shadowchat_session"); const savedKey = localStorage.getItem("shadowchat_key"); if (saved && savedKey) { setKey(savedKey); return JSON.parse(saved); } } catch {}
+    return null;
+  });
+  const [messages, setMessages] = useState<{id:number; sender:string; body:string; mine:boolean; time:string}[]>([]);
   const [draft, setDraft] = useState("");
-  const [inviteId, setInviteId] = useState("");
-  const [newRoomName, setNewRoomName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("Only invite people you trust.");
-  const timelineRef = useRef<HTMLDivElement>(null);
+  const [shareLink, setShareLink] = useState("");
+  const [ownerToken, setOwnerToken] = useState(localStorage.getItem("shadowchat_owner") || "");
+  const timeline = useRef<HTMLDivElement>(null);
+
+  const joinWithCode = useCallback(async (roomCode: string, roomKey: string, displayName: string) => {
+    const joined = await api({ action: "join", secret: roomCode, displayName: displayName || "Guest" });
+    const next = { roomId: joined.roomId, sessionId: joined.sessionId, token: joined.token, displayName: joined.displayName, expiresAt: joined.expiresAt };
+    localStorage.setItem("shadowchat_session", JSON.stringify(next));
+    localStorage.setItem("shadowchat_key", roomKey);
+    localStorage.setItem("shadowchat_name", next.displayName);
+    setSession(next); setKey(roomKey); setCode(roomCode); setName(next.displayName);
+    setError("");
+  }, []);
 
   useEffect(() => {
-    if (!client) return;
-    const refreshRooms = () => setRooms(client.getRooms().map((room) => ({
-      roomId: room.roomId, name: room.name || room.roomId, encrypted: room.hasEncryptionStateEvent()
-    })));
-    const onEvent = (event: sdk.MatrixEvent, room?: sdk.Room) => {
-      if (!room || room.roomId !== activeRoom || event.getType() !== "m.room.message") return;
-      if (event.getContent()?.msgtype !== "m.text") return;
-      const body = event.getContent()?.body;
-      if (typeof body !== "string") return;
-      const id = event.getId() || String(event.getTs()) + String(event.getSender());
-      setMessages((old) => old.some((m) => m.id === id) ? old : [...old, {
-        id, sender: event.getSender() || "unknown", body,
-        mine: event.getSender() === client.getUserId(),
-        time: new Date(event.getTs()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-      }]);
-      refreshRooms();
+    if (!session || !key) return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const result = await api({ action: "list", token: session.token });
+        const decoded = await Promise.all((result.messages as Message[]).map(async m => ({
+          id: m.id, sender: m.guest_sessions?.display_name || (m.session_id === session.sessionId ? session.displayName : "Guest"),
+          body: await decryptMessage(m.ciphertext, key), mine: m.session_id === session.sessionId,
+          time: new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+        })));
+        if (alive) setMessages(decoded);
+      } catch (e) { if (alive) setError(e instanceof Error ? e.message : "Could not load messages"); }
     };
-    client.on(sdk.RoomEvent.Timeline, onEvent);
-    refreshRooms();
-    return () => { client.off(sdk.RoomEvent.Timeline, onEvent); };
-  }, [client, activeRoom]);
+    void load();
+    const timer = window.setInterval(() => { void load(); }, 2500);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, [session, key]);
 
-  useEffect(() => {
-    setMessages([]);
-    if (!client || !activeRoom) return;
-    const room = client.getRoom(activeRoom);
-    if (!room) return;
-    setMessages(room.getLiveTimeline().getEvents()
-      .filter((event) => event.getType() === "m.room.message" && event.getContent()?.msgtype === "m.text")
-      .map((event) => ({
-        id: event.getId() || String(event.getTs()) + String(event.getSender()),
-        sender: event.getSender() || "unknown",
-        body: String(event.getContent()?.body || ""),
-        mine: event.getSender() === client.getUserId(),
-        time: new Date(event.getTs()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+  useEffect(() => { timeline.current?.scrollTo({ top: timeline.current.scrollHeight, behavior: "smooth" }); }, [messages]);
+
+  async function createRoom() {
+    setBusy(true); setError("");
+    try {
+      const made = await api({ action: "create" });
+      const rawKey = crypto.getRandomValues(new Uint8Array(32));
+      const roomKey = b64(rawKey).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+      const link = window.location.origin + window.location.pathname + "#code=" + made.secret + "&key=" + roomKey;
+      localStorage.setItem("shadowchat_owner", made.ownerToken); setOwnerToken(made.ownerToken);
+      setShareLink(link);
+      await joinWithCode(made.secret, roomKey, name || "Owner");
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not create room"); }
+    finally { setBusy(false); }
+  }
+  async function joinRoom(e: FormEvent) {
+    e.preventDefault(); setBusy(true); setError("");
+    try {
+      const cleanCode = code.trim().toLowerCase();
+      const roomKey = key.trim() || initial.key;
+      if (!/^[a-f0-9]{32}$/.test(cleanCode)) throw new Error("Room code must be 32 hexadecimal characters. Use the full invite link if you have one.");
+      if (!roomKey) throw new Error("A private link key is required. Ask the owner to send the full invite link.");
+      await joinWithCode(cleanCode, roomKey, name.trim() || "Guest");
+      const nextUrl = window.location.origin + window.location.pathname + "#code=" + cleanCode + "&key=" + roomKey;
+      window.history.replaceState(null, "", nextUrl);
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not join room"); }
+    finally { setBusy(false); }
+  }
+  async function send(e: FormEvent) {
+    e.preventDefault(); if (!session || !key || !draft.trim()) return;
+    setBusy(true); setError("");
+    try {
+      const ciphertext = await encryptMessage(draft.trim(), key);
+      await api({ action: "send", token: session.token, ciphertext });
+      setDraft("");
+      const result = await api({ action: "list", token: session.token });
+      const decoded = await Promise.all((result.messages as Message[]).map(async m => ({
+        id: m.id, sender: m.guest_sessions?.display_name || (m.session_id === session.sessionId ? session.displayName : "Guest"),
+        body: await decryptMessage(m.ciphertext, key), mine: m.session_id === session.sessionId,
+        time: new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
       })));
-  }, [client, activeRoom]);
-
-  useEffect(() => { timelineRef.current?.scrollTo({ top: timelineRef.current.scrollHeight, behavior: "smooth" }); }, [messages]);
-
-  async function signIn(e: FormEvent) {
-    e.preventDefault(); setBusy(true); setError(""); setNotice("Connecting…");
-    try {
-      const baseUrl = homeserver.trim().replace(/\/+$/, "");
-      const loginClient = sdk.createClient({ baseUrl });
-      const result = await loginClient.login("m.login.password", { user: username.trim(), password });
-      const next = sdk.createClient({ baseUrl, accessToken: result.access_token, userId: result.user_id, deviceId: result.device_id });
-      await next.initRustCrypto();
-      await next.startClient({ initialSyncLimit: 30 });
-      setClient(next); setUserId(result.user_id); setPassword("");
-      setNotice("Connected. Verify your device identity with your contact.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign-in failed. Check your account and homeserver.");
-      setNotice("Not connected");
-    } finally { setBusy(false); }
-  }
-
-  async function createPrivateRoom(e: FormEvent) {
-    e.preventDefault(); if (!client || !newRoomName.trim()) return;
-    setBusy(true); setError("");
-    try {
-      const result = await client.createRoom({
-        name: newRoomName.trim(), visibility: "private" as never, preset: "private_chat" as never,
-        power_level_content_override: { invite: 100 },
-        initial_state: [{ type: "m.room.encryption", state_key: "", content: { algorithm: "m.megolm.v1.aes-sha2" } }]
-      });
-      setNewRoomName(""); setActiveRoom(result.room_id);
-      setNotice("Encrypted room created. Invite only people you trust.");
-      setRooms(client.getRooms().map((r) => ({ roomId: r.roomId, name: r.name || r.roomId, encrypted: r.hasEncryptionStateEvent() })));
-    } catch (err) { setError(err instanceof Error ? err.message : "Could not create encrypted room."); }
+      setMessages(decoded);
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not send message"); }
     finally { setBusy(false); }
   }
-
-  async function inviteContact(e: FormEvent) {
-    e.preventDefault(); if (!client || !activeRoom || !inviteId.trim()) return;
-    setBusy(true); setError("");
-    try {
-      await client.invite(activeRoom, inviteId.trim()); setInviteId("");
-      setNotice("Invite sent. Ask your contact to verify your device identity.");
-    } catch (err) { setError(err instanceof Error ? err.message : "Invite failed. Use a Matrix ID such as @friend:matrix.org."); }
+  async function revokeRoom() {
+    if (!session || !ownerToken) { setError("Only the room creator on this browser can revoke this room."); return; }
+    if (!window.confirm("Revoke this room? Nobody will be able to send or read messages afterwards.")) return;
+    setBusy(true);
+    try { await api({ action: "revoke", token: session.token, ownerToken }); localStorage.removeItem("shadowchat_session"); localStorage.removeItem("shadowchat_key"); localStorage.removeItem("shadowchat_owner"); setSession(null); setOwnerToken(""); setMessages([]); setShareLink(""); setError("Room revoked."); }
+    catch (e) { setError(e instanceof Error ? e.message : "Could not revoke room"); }
     finally { setBusy(false); }
   }
-
-  async function sendMessage(e: FormEvent) {
-    e.preventDefault(); if (!client || !activeRoom || !draft.trim()) return;
-    const body = draft.trim(); setDraft("");
-    try {
-      await client.sendTextMessage(activeRoom, body);
-    } catch (err) {
-      setDraft(body); setError(err instanceof Error ? err.message : "Message could not be sent.");
-    }
+  function leave() {
+    localStorage.removeItem("shadowchat_session"); localStorage.removeItem("shadowchat_key");
+    setSession(null); setMessages([]); setShareLink(""); setError("");
   }
-
-  function signOut() {
-    client?.stopClient(); setClient(null); setUserId(""); setRooms([]); setMessages([]); setActiveRoom("");
-    setNotice("Signed out from this page. Also revoke sessions and clear browser data on shared devices.");
-  }
-
-  const active = rooms.find((room) => room.roomId === activeRoom);
-  return <main className="app-shell">
-    <header className="topbar"><a className="brand" href="#"><span className="brand-mark">S</span><span>shadow<span className="brand-light">chat</span></span></a><div className="top-status"><span className={"status-dot " + (client ? "online" : "")}/>{client ? "Connected" : "Private by design"}</div></header>
-    {!client ? <section className="welcome">
-      <div className="hero-copy"><div className="eyebrow"><span className="mini-lock">⌑</span> YOUR SPACE. YOUR CONVERSATIONS.</div><h1>Talk freely.<br/><em>Keep it yours.</em></h1><p className="intro">A private messaging starter built on Matrix with encrypted rooms. No custom-made cryptography, no pretend security indicators.</p>
-        <div className="feature-row"><div><span className="feature-icon">◇</span><strong>Encrypted rooms</strong><small>Matrix Rust crypto</small></div><div><span className="feature-icon">↗</span><strong>Invite-only</strong><small>You choose the people</small></div><div><span className="feature-icon">◉</span><strong>Open protocol</strong><small>Portable foundation</small></div></div></div>
-      <form className="login-card" onSubmit={signIn}><div className="card-kicker">WELCOME BACK</div><h2>Sign in to ShadowChat</h2><p className="muted">Use an existing Matrix account on a homeserver you trust.</p>
-        <label>Homeserver URL<input value={homeserver} onChange={(e) => setHomeserver(e.target.value)} type="url" required placeholder="https://matrix.org" autoComplete="url"/></label>
-        <label>Username or Matrix ID<input value={username} onChange={(e) => setUsername(e.target.value)} required placeholder="@you:matrix.org" autoComplete="username"/></label>
-        <label>Password<input value={password} onChange={(e) => setPassword(e.target.value)} type="password" required placeholder="Your Matrix password" autoComplete="current-password"/></label>
-        <button className="primary-button" disabled={busy}>{busy ? "Connecting…" : "Connect securely"} <span>↗</span></button>
-        {error && <p className="error-text">{error}</p>}<p className="fine-print">Your password is sent to the homeserver you enter. Verify its URL and trust the website origin before signing in.</p></form>
-      <div className="page-note"><span>✳</span> Early-stage starter — not security audited or hack-proof.</div>
-    </section> : <section className="chat-layout">
-      <aside className="sidebar"><div className="sidebar-head"><div><div className="card-kicker">YOUR WORKSPACE</div><h2>Messages</h2></div><button className="icon-button" title="Sign out" onClick={signOut}>↪</button></div>
-        <div className="account-chip"><div className="avatar">{userId.slice(1,2).toUpperCase() || "S"}</div><div className="account-copy"><strong>{userId}</strong><small>Matrix account</small></div><span className="secure-pill">CONNECTED</span></div>
-        <form className="new-room-form" onSubmit={createPrivateRoom}><label>Create encrypted room</label><div className="inline-form"><input value={newRoomName} onChange={(e) => setNewRoomName(e.target.value)} placeholder="Room name" required/><button aria-label="Create room" disabled={busy}>+</button></div></form>
-        <div className="section-label">YOUR CONVERSATIONS <span>{rooms.length}</span></div><div className="room-list">{rooms.map((room) => <button key={room.roomId} className={"room-item " + (activeRoom === room.roomId ? "selected" : "")} onClick={() => setActiveRoom(room.roomId)}><span className="room-avatar">{room.name.slice(0,1).toUpperCase()}</span><span className="room-meta"><strong>{room.name}</strong><small>{room.encrypted ? "♢ Encrypted room" : "Room"}</small></span><span className="room-arrow">›</span></button>)}{rooms.length === 0 && <p className="empty-hint">No rooms yet. Create one to start.</p>}</div>
-        <div className="sidebar-foot"><span className="green-check">✓</span> Encryption provided by Matrix SDK</div></aside>
-      <section className="conversation">{activeRoom ? <>
-        <div className="conversation-head"><div className="room-avatar large">{(active?.name || "C").slice(0,1).toUpperCase()}</div><div className="conversation-title"><h2>{active?.name || "Conversation"}</h2><span><i/> {active?.encrypted ? "Encrypted room" : "Encryption status unavailable"}</span></div><button className="outline-button" onClick={() => { const id = window.prompt("Friend's Matrix ID, for example @friend:matrix.org"); if (id) setInviteId(id); }}>＋ Invite</button></div>
-        <div className="security-banner"><span>◇</span><div><strong>Private room</strong><small>Invite only trusted people. Verify device identities to reduce impersonation risk.</small></div></div>
-        <div className="timeline" ref={timelineRef}>{messages.length === 0 ? <div className="empty-chat"><div className="empty-lock">◇</div><h3>This is your quiet space.</h3><p>Send the first message, or invite a friend with a Matrix account.</p></div> : messages.map((m) => <div className={"message-row " + (m.mine ? "mine" : "")} key={m.id}>{!m.mine && <div className="tiny-avatar">{m.sender.replace(/^@/, "").slice(0,1).toUpperCase()}</div>}<div className="message-stack">{!m.mine && <small className="sender">{m.sender}</small>}<div className="bubble">{m.body}</div><time>{m.time}</time></div></div>)}</div>
-        <form className="invite-strip" onSubmit={inviteContact}><span>＋</span><input value={inviteId} onChange={(e) => setInviteId(e.target.value)} placeholder="Invite by Matrix ID: @friend:matrix.org"/><button disabled={busy || !inviteId.trim()}>Send invite</button></form>
-        <form className="composer" onSubmit={sendMessage}><input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Write a private message…" aria-label="Message" autoComplete="off"/><span className="composer-lock" title="Encrypted room">◇</span><button className="send-button" disabled={!draft.trim() || busy} aria-label="Send message">↑</button></form>
-      </> : <div className="empty-chat"><div className="empty-lock">◇</div><h3>Create your first room</h3><p>Use the left panel to create a private encrypted room.</p></div>}</section>
-      {error && <div className="toast-error" role="alert">{error}<button onClick={() => setError("")}>×</button></div>}<div className="toast-notice">{notice}</div>
+  return <main className="guest-app">
+    <header className="guest-header"><a className="brand" href="#"><span className="brand-mark">S</span><span>shadow<span className="brand-light">chat</span></span></a><span className="top-status"><i className={session ? "status-dot online" : "status-dot"}/>{session ? "Private room connected" : "Share a code. Keep it private."}</span></header>
+    {!session ? <section className="guest-welcome"><div className="guest-hero"><div className="eyebrow">PRIVATE CONVERSATIONS, SIMPLE ACCESS</div><h1>Talk freely.<br/><em>Keep it yours.</em></h1><p className="intro">Create a private room and share one link. No Matrix account required. Messages are encrypted in your browser before they reach the server.</p><div className="feature-row"><div><span className="feature-icon">◇</span><strong>Browser encryption</strong><small>AES-GCM message encryption</small></div><div><span className="feature-icon">↗</span><strong>Invite link</strong><small>Share only with trusted people</small></div></div></div>
+      <div className="guest-card"><div className="card-kicker">GET STARTED</div><h2>Create a room or join one</h2><label>Your display name<input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Prince" maxLength={40}/></label><button className="primary-button" disabled={busy} onClick={()=>void createRoom()}>{busy ? "Creating room…" : "＋ Create a private room"}</button><div className="guest-divider"><span>OR JOIN WITH A CODE</span></div><form onSubmit={joinRoom}><label>Room code<input value={code} onChange={e=>setCode(e.target.value)} placeholder="Paste the code or open invite link" required/></label><label>Private link key<input value={key} onChange={e=>setKey(e.target.value)} placeholder="Filled automatically from invite link" required/></label><button className="primary-button" disabled={busy}>{busy ? "Joining…" : "Join room ↗"}</button></form><p className="fine-print">Keep the full invite link secret. Anyone who has it can join and decrypt messages. This is an early-stage app, not independently security-audited.</p>{error && <p className="error-text">{error}</p>}</div>
+    </section> : <section className="guest-chat"><div className="guest-chat-head"><div><div className="card-kicker">YOUR PRIVATE SPACE</div><h2>Conversation</h2><p>Signed in as <strong>{session.displayName}</strong></p></div><div className="chat-actions"><button className="outline-button" onClick={()=>{void navigator.clipboard.writeText(shareLink || (window.location.origin+window.location.pathname+"#code="+code+"&key="+key));setError("Invite link copied.");}}>Copy invite link</button>{ownerToken && <button className="outline-button danger" onClick={()=>void revokeRoom()} disabled={busy}>Revoke room</button>}<button className="outline-button" onClick={leave}>Leave</button></div></div>
+      <div className="security-banner"><span>◇</span><div><strong>Encrypted in your browser</strong><small>The server stores encrypted message payloads. Keep the invite link private and use it on trusted devices.</small></div></div>
+      <div className="timeline guest-timeline" ref={timeline}>{messages.length===0 ? <div className="empty-chat"><div className="empty-lock">◇</div><h3>Start the conversation.</h3><p>Share the invite link with one trusted person, then send your first message.</p></div> : messages.map(m=><div key={m.id} className={"message-row "+(m.mine?"mine":"")}><div className="message-stack">{!m.mine && <small className="sender">{m.sender}</small>}<div className="bubble">{m.body}</div><time>{m.time}</time></div></div>)}</div>
+      <form className="composer guest-composer" onSubmit={send}><input value={draft} onChange={e=>setDraft(e.target.value)} placeholder="Write a private message…" autoComplete="off" aria-label="Message"/><button className="send-button" disabled={busy||!draft.trim()} aria-label="Send message">↑</button></form>{error && <p className="error-text guest-error">{error}</p>}
     </section>}
-    <footer className="footer"><span>SHADOWCHAT · PRIVATE MESSAGING STARTER</span><span>Built on Matrix · Verify identities, not just icons</span></footer>
+    <footer className="footer"><span>SHADOWCHAT · GUEST CHAT</span><span>Never share your private invite link publicly.</span></footer>
   </main>;
 }
