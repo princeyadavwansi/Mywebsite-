@@ -3,7 +3,8 @@ import type { FormEvent } from "react";
 
 const API = "https://vurpgczypufhkflfowom.supabase.co/functions/v1/shadowchat";
 type Message = { id: number; session_id: string; ciphertext: string; created_at: string; guest_sessions?: { display_name?: string } | null };
-type Session = { roomId: string; sessionId: string; token: string; displayName: string; expiresAt: string };\ntype Member = { id: string; displayName: string; lastSeenAt: string; lastReadMessageId: number | null; online: boolean };
+type Session = { roomId: string; sessionId: string; token: string; displayName: string; expiresAt: string };
+type Member = { id: string; displayName: string; lastSeenAt: string; lastReadMessageId: number | null; online: boolean };
 const b64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
 const unb64 = (value: string) => Uint8Array.from(atob(value), c => c.charCodeAt(0));
 const fromUrl = (value: string) => value.replace(/-/g, "+").replace(/_/g, "/");
@@ -41,7 +42,8 @@ export default function App() {
     try { const saved = localStorage.getItem("shadowchat_session"); const savedKey = localStorage.getItem("shadowchat_key"); if (saved && savedKey && localStorage.getItem("shadowchat_code") === (initial.code || localStorage.getItem("shadowchat_code") || "")) { return JSON.parse(saved); } } catch {}
     return null;
   });
-  const [messages, setMessages] = useState<{id:number; sender:string; body:string; mine:boolean; time:string}[]>([]);\n  const [members, setMembers] = useState<Member[]>([]);
+  const [messages, setMessages] = useState<{id:number; sender:string; body:string; mine:boolean; time:string}[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
