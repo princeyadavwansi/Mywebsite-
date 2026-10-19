@@ -16,3 +16,9 @@
 @media(max-width:600px){.guest-app{padding:0 12px}.guest-header{height:65px}.guest-welcome{padding:35px 0;gap:30px}.guest-hero h1{font-size:55px;letter-spacing:-3px}.guest-card{padding:22px}.guest-chat{height:calc(100vh - 140px);min-height:550px;margin:12px 0}.guest-chat-head{align-items:flex-start;padding:12px;flex-direction:column;gap:10px}.chat-actions{justify-content:flex-start}.guest-chat .security-banner{margin:9px 12px 0}.guest-timeline{padding:12px}.guest-composer{margin:0 9px 10px}.guest-error{margin:0 10px 10px}.guest-header .top-status{font-size:9px}}
 
 .room-code-pill{display:flex;align-items:center;gap:10px;border:1px solid #514276;background:#1a1726;color:#bdb1ff;border-radius:9px;padding:9px 13px;font-size:9px;letter-spacing:1px}.room-code-pill strong{font-size:19px;letter-spacing:4px;color:#fff}
+
+/* Keep message colors consistent by role: host = violet, guest = teal. */
+.guest-timeline .message-row.host-message .bubble{background:#6551b5;border-color:#8b78e0;color:#fff;border-radius:12px 12px 3px 12px}
+.guest-timeline .message-row.guest-message .bubble{background:#124b4a;border-color:#237b78;color:#e4fffc;border-radius:12px 12px 12px 3px}
+.guest-timeline .message-row.host-message .sender{color:#b8a7ff}
+.guest-timeline .message-row.guest-message .sender{color:#63d8cc}
