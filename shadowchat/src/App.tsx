@@ -3,7 +3,7 @@ import type { FormEvent } from "react";
 
 const API = "https://vurpgczypufhkflfowom.supabase.co/functions/v1/shadowchat";
 type Message = { id: number; session_id: string; ciphertext: string; created_at: string; guest_sessions?: { display_name?: string } | null };
-type Session = { roomId: string; sessionId: string; token: string; displayName: string; expiresAt: string };
+type Session = { roomId: string; sessionId: string; token: string; displayName: string; expiresAt: string };\ntype Member = { id: string; displayName: string; lastSeenAt: string; lastReadMessageId: number | null; online: boolean };
 const b64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
 const unb64 = (value: string) => Uint8Array.from(atob(value), c => c.charCodeAt(0));
 const fromUrl = (value: string) => value.replace(/-/g, "+").replace(/_/g, "/");
@@ -41,7 +41,7 @@ export default function App() {
     try { const saved = localStorage.getItem("shadowchat_session"); const savedKey = localStorage.getItem("shadowchat_key"); if (saved && savedKey && localStorage.getItem("shadowchat_code") === (initial.code || localStorage.getItem("shadowchat_code") || "")) { return JSON.parse(saved); } } catch {}
     return null;
   });
-  const [messages, setMessages] = useState<{id:number; sender:string; body:string; mine:boolean; time:string}[]>([]);
+  const [messages, setMessages] = useState<{id:number; sender:string; body:string; mine:boolean; time:string}[]>([]);\n  const [members, setMembers] = useState<Member[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -71,7 +71,7 @@ export default function App() {
           body: await decryptMessage(m.ciphertext, key), mine: m.session_id === session.sessionId,
           time: new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
         })));
-        if (alive) setMessages(decoded);
+        if (alive) { setMessages(decoded); setMembers((result.members || []) as Member[]); }
       } catch (e) { if (alive) setError(e instanceof Error ? e.message : "Could not load messages"); }
     };
     void load();
@@ -136,9 +136,9 @@ export default function App() {
     <header className="guest-header"><a className="brand" href="#"><span className="brand-mark">S</span><span>shadow<span className="brand-light">chat</span></span></a><span className="top-status"><i className={session ? "status-dot online" : "status-dot"}/>{session ? "Private room connected" : "Share a code. Keep it private."}</span></header>
     {!session ? <section className="guest-welcome"><div className="guest-hero"><div className="eyebrow">PRIVATE CONVERSATIONS, SIMPLE ACCESS</div><h1>Talk freely.<br/><em>Keep it yours.</em></h1><p className="intro">One shared room for everyone who knows the code. Enter 0530 to join from Chrome anytime.</p><div className="feature-row"><div><span className="feature-icon">◇</span><strong>Browser encryption</strong><small>AES-GCM message encryption</small></div><div><span className="feature-icon">#</span><strong>4-digit room code</strong><small>Enter the code to join anytime</small></div></div></div>
       <div className="guest-card"><div className="card-kicker">GET STARTED</div><h2>Open shared chat or enter code</h2><label>Your display name<input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Prince" maxLength={40}/></label><button className="primary-button" disabled={busy} onClick={()=>void createRoom()}>{busy ? "Creating room…" : "＋ Create a private room"}</button><div className="guest-divider"><span>OR JOIN WITH A CODE</span></div><form onSubmit={joinRoom}><label>4-digit room code<input value={code} onChange={e=>setCode(e.target.value.replace(/\D/g,"").slice(0,4))} placeholder="Default code: 0530" inputMode="numeric" maxLength={4} pattern="[0-9]{4}" required/></label><button className="primary-button" disabled={busy}>{busy ? "Joining…" : "Join room ↗"}</button></form><p className="fine-print">Shared code is 0530. Anyone who knows it can join this same chat. Because the code is easy to guess, do not use this chat for sensitive information.</p>{error && <p className="error-text">{error}</p>}</div>
-    </section> : <section className="guest-chat"><div className="guest-chat-head"><div><div className="card-kicker">YOUR PRIVATE SPACE</div><h2>Conversation</h2><p>Signed in as <strong>{session.displayName}</strong></p></div><div className="chat-actions"><div className="room-code-pill">ROOM CODE <strong>{code}</strong></div>{ownerToken && <button className="outline-button danger" onClick={()=>void revokeRoom()} disabled={busy}>Revoke room</button>}<button className="outline-button" onClick={leave}>Leave</button></div></div>
-      <div className="security-banner"><span>◇</span><div><strong>Encrypted in your browser</strong><small>Messages are encrypted in the browser, but a 4-digit code is weak. Do not use this for sensitive information.</small></div></div>
-      <div className="timeline guest-timeline" ref={timeline}>{messages.length===0 ? <div className="empty-chat"><div className="empty-lock">◇</div><h3>Start the conversation.</h3><p>Tell your trusted person this room code so they can join from the website.</p></div> : messages.map(m=><div key={m.id} className={"message-row "+(m.mine?"mine":"")}><div className="message-stack">{!m.mine && <small className="sender">{m.sender}</small>}<div className="bubble">{m.body}</div><time>{m.time}</time></div></div>)}</div>
+    </section> : <section className="guest-chat"><div className="guest-chat-head"><div><div className="card-kicker">YOUR PRIVATE SPACE</div><h2>Conversation</h2><p>Signed in as <strong>{session.displayName}</strong></p><p className="presence-line">{members.filter(m=>m.id!==session.sessionId && m.online).length > 0 ? <><i className="status-dot online"/> {members.filter(m=>m.id!==session.sessionId && m.online).map(m=>m.displayName).join(", ")} online</> : <><i className="status-dot"/> Others offline</>}</p></div><div className="chat-actions"><div className="room-code-pill">ROOM CODE <strong>{code}</strong></div>{ownerToken && <button className="outline-button danger" onClick={()=>void revokeRoom()} disabled={busy}>Revoke room</button>}<button className="outline-button" onClick={leave}>Leave</button></div></div>
+      <div className="security-banner"><span>◇</span><div><strong>Encrypted in your browser</strong><small>Messages stay in chat history and are not deleted when someone reads them. Read receipts and online status update while the chat is open. A 4-digit code is weak; avoid sensitive information.</small></div></div>
+      <div className="timeline guest-timeline" ref={timeline}>{messages.length===0 ? <div className="empty-chat"><div className="empty-lock">◇</div><h3>Start the conversation.</h3><p>Tell your trusted person this room code so they can join from the website.</p></div> : messages.map(m=><div key={m.id} className={"message-row "+(m.mine?"mine":"")}><div className="message-stack">{!m.mine && <small className="sender">{m.sender}</small>}<div className="bubble">{m.body}</div><time>{m.time}</time>{m.mine && <small className="read-receipt">{members.some(member=>member.id!==session.sessionId && member.lastReadMessageId!==null && member.lastReadMessageId>=m.id) ? "Seen" : "Sent"}</small>}</div></div>)}</div>
       <form className="composer guest-composer" onSubmit={send}><input value={draft} onChange={e=>setDraft(e.target.value)} placeholder="Write a private message…" autoComplete="off" aria-label="Message"/><button className="send-button" disabled={busy||!draft.trim()} aria-label="Send message">↑</button></form>{error && <p className="error-text guest-error">{error}</p>}
     </section>}
     <footer className="footer"><span>SHADOWCHAT · GUEST CHAT</span><span>Only share your room code with trusted people.</span></footer>
