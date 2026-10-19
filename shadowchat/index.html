@@ -1,2 +1,33 @@
 <!doctype html>
-<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><meta name="theme-color" content="#0b0d12"/><meta name="description" content="ShadowChat private messaging starter built on Matrix"/><title>ShadowChat — Private messaging</title></head><body><div id="root"></div><script type="module" src="./src/main.tsx"></script></body></html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="theme-color" content="#0b0d12"/>
+<meta name="description" content="BotChat private chat"/>
+<title>BotChat — Private chat</title>
+<style>
+html,body{margin:0;min-height:100%;background:#0b0d12;color:#f1f2f6;font-family:system-ui,sans-serif}
+#boot-status{max-width:640px;margin:12vh auto;padding:24px;line-height:1.6}
+#boot-status h1{font-size:28px}
+#boot-error{color:#ffaaaa;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}
+</style>
+</head>
+<body>
+<div id="root"><div id="boot-status"><h1>BotChat</h1><p>Loading app…</p><p>If this message stays here, the app script did not start correctly.</p></div></div>
+<script>
+(function(){
+ function showError(message){
+   var root=document.getElementById('root');
+   if(!root)return;
+   var box=document.getElementById('boot-error');
+   if(!box){box=document.createElement('p');box.id='boot-error';root.appendChild(box);}
+   box.textContent='App loading error: '+String(message||'Unknown error')+' — Try opening this page in Chrome and check your internet connection.';
+ }
+ window.addEventListener('error',function(e){showError(e.message||e.filename||'Script failed to load');});
+ window.addEventListener('unhandledrejection',function(e){showError(e.reason&&e.reason.message||e.reason||'Unhandled promise rejection');});
+})();
+</script>
+<script type="module" src="./src/main.tsx"></script>
+</body>
+</html>
