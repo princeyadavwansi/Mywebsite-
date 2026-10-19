@@ -33,11 +33,11 @@ function readHash() {
 }
 export default function App() {
   const initial = readHash();
-  const [code, setCode] = useState(initial.code);
+  const [code, setCode] = useState(() => initial.code || localStorage.getItem("shadowchat_code") || "");
   const [key, setKey] = useState(() => localStorage.getItem("shadowchat_key") || initial.key);
   const [name, setName] = useState(localStorage.getItem("shadowchat_name") || "");
   const [session, setSession] = useState<Session | null>(() => {
-    try { const saved = localStorage.getItem("shadowchat_session"); const savedKey = localStorage.getItem("shadowchat_key"); if (saved && savedKey && localStorage.getItem("shadowchat_code") === initial.code) { return JSON.parse(saved); } } catch {}
+    try { const saved = localStorage.getItem("shadowchat_session"); const savedKey = localStorage.getItem("shadowchat_key"); if (saved && savedKey && localStorage.getItem("shadowchat_code") === (initial.code || localStorage.getItem("shadowchat_code") || "")) { return JSON.parse(saved); } } catch {}
     return null;
   });
   const [messages, setMessages] = useState<{id:number; sender:string; body:string; mine:boolean; time:string}[]>([]);
