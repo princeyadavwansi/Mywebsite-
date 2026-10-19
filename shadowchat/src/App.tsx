@@ -87,6 +87,7 @@ export default function App() {
     try {
       const result = await client.createRoom({
         name: newRoomName.trim(), visibility: "private" as never, preset: "private_chat" as never,
+        power_level_content_override: { invite: 100 },
         initial_state: [{ type: "m.room.encryption", state_key: "", content: { algorithm: "m.megolm.v1.aes-sha2" } }]
       });
       setNewRoomName(""); setActiveRoom(result.room_id);
