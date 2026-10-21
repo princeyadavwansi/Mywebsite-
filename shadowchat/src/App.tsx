@@ -94,12 +94,24 @@ export default function App() {
     let idleTimer = 0;
     const lockNow = () => { setLocked(true); setPinInput(""); setPinError(""); };
     const resetIdle = () => { window.clearTimeout(idleTimer); idleTimer = window.setTimeout(lockNow, 60_000); };
-    const onVisibility = () => { if (document.visibilityState === "hidden") lockNow(); else resetIdle(); };
+    // Hide chat immediately when the tab/app is backgrounded or the page is being hidden.
+    // This is a browser-level privacy measure, not protection against active spyware or OS-level capture.
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") lockNow();
+      else resetIdle();
+    };
+    const onPageHide = () => lockNow();
     const events = ["pointerdown", "keydown", "touchstart", "mousemove"] as const;
     events.forEach(event => window.addEventListener(event, resetIdle, { passive: true }));
     document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", onPageHide);
     resetIdle();
-    return () => { window.clearTimeout(idleTimer); events.forEach(event => window.removeEventListener(event, resetIdle)); document.removeEventListener("visibilitychange", onVisibility); };
+    return () => {
+      window.clearTimeout(idleTimer);
+      events.forEach(event => window.removeEventListener(event, resetIdle));
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", onPageHide);
+    };
   }, [pinHash, locked]);
 
   async function submitPin(e: FormEvent) {
